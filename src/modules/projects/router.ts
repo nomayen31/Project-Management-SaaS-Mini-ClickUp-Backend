@@ -1,6 +1,7 @@
 import { Router, type Request } from "express";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import * as schemas from "./schema.js";
+import { discussionRouter } from "./discussion.js";
 import { attachmentRouter } from "./attachments.js";
 import type { AttachmentStorage } from "./storage.js";
 import { createProjectService } from "./service.js";
@@ -13,6 +14,7 @@ export function projectRouter(db: PrismaClient, actor: (request: Request) => { i
   const task = (request: Request) => ({ ...project(request), taskId: schemas.id.parse(request.params.taskId) });
 
   router.use("/:projectId/tasks/:taskId/attachments", attachmentRouter(db, task, storage));
+  router.use("/:projectId/tasks/:taskId", discussionRouter(db, task));
 
   router.get("/", async (req, res) => {
     res.json({ data: await service.listProjects(scope(req), schemas.projectQuery.parse(req.query)) });
