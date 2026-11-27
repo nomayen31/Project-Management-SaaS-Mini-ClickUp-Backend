@@ -1,11 +1,11 @@
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
-import type { loadAuth } from "./auth.js";
+import { loadAuth } from "./auth.js";
 import express, { type ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 import { healthRouter } from "./modules/health.js";
 import { readinessRouter } from "./modules/readiness.js";
 import { workspaceRouter } from "./modules/workspaces/router.js";
-import type { AttachmentStorage } from "./modules/projects/storage.js";
+import { loadAttachmentStorage, type AttachmentStorage } from "./modules/projects/storage.js";
 import { ApiError } from "./lib/api-error.js";
 
 type AuthConfig = NonNullable<ReturnType<typeof loadAuth>>;
@@ -76,3 +76,23 @@ export function createApp(auth?: AppAuth, storage?: AttachmentStorage) {
 }
 
 export const app = createApp();
+
+function createVercelApp() {
+  let auth: ReturnType<typeof loadAuth> = undefined;
+  let storage: AttachmentStorage | undefined;
+  try {
+    auth = loadAuth();
+  } catch {
+    console.error("Authentication is unavailable. Check the backend deployment configuration.");
+  }
+
+  try {
+    storage = loadAttachmentStorage();
+  } catch {
+    console.error("Attachment storage is unavailable. Check the backend deployment configuration.");
+  }
+
+  return createApp(auth, storage);
+}
+
+export default process.env.VERCEL === "1" ? createVercelApp() : app;

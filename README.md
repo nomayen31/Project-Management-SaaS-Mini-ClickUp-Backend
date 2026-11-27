@@ -83,3 +83,11 @@ Set these variables in the backend service environment:
 Set the optional Google, Better Auth Infra, and Cloudinary variables in the backend service when enabling those integrations. Generate a public HTTPS domain for the Railway service. After the service returns 200 from both `/api/health` and `/api/ready`, set the Vercel frontend's production `BACKEND_ORIGIN` to that Railway origin and redeploy the frontend. Then repeat both checks through the frontend domain.
 
 The runtime image includes Prisma CLI and the committed migrations for the pre-deploy step. Docker's build context includes only the sources and manifests needed to build the app. Credentials belong in Railway service variables.
+
+## Deploy the backend to Vercel
+
+The backend repository includes a Vercel configuration for Express. Its function entry point is the default export in `src/app.ts`. The build generates Prisma Client before Vercel packages the handler.
+
+Use the same backend environment variables listed above. Set `APP_ORIGIN` to the exact Vercel frontend origin and set the frontend's `BACKEND_ORIGIN` to the backend's public HTTPS origin. Apply migrations with `npm run db:migrate:deploy` against the intended production database before enabling auth. Run migrations separately from Vercel builds.
+
+When production auth configuration is incomplete, the Vercel function still serves health and provider status. Authenticated routes are available after the required variables are configured. The Vercel handler does not start a persistent attachment cleanup worker. Run the cleanup worker on a persistent process before enabling production attachments, or provide scheduled cleanup that drains the attachment cleanup queue.
