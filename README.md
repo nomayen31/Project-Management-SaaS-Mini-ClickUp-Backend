@@ -59,3 +59,9 @@ Task collection and detail endpoints use the same methods under `/:projectId/tas
 Collection filters include `status`, `priority`, and `search`. Tasks also support `label`. Set `sort=newest|due|name`, `page` (one-based), and `limit` (1–50). Dates use YYYY-MM-DD on input. Project progress counts tasks with status DONE.
 
 An attachment collection lives at `/:taskId/attachments`. GET lists completed uploads. POST accepts PDF, PNG, or JPEG bytes, up to 3 MiB, with a matching Content-Type and an X-TaskFlow-File-Name header containing the percent-encoded filename. GET at `/:attachmentId/download` checks access before issuing a 60-second signed download URL. DELETE at `/:attachmentId` removes the metadata and queues provider cleanup, including when the task or project is deleted. Set the three Cloudinary variables in the backend environment to enable storage.
+
+### Board and calendar
+
+Use `GET /tasks?sort=board&status=TODO` under a project to read a Kanban column in persisted order. `POST /tasks/:taskId/move` accepts `{ "status": "IN_PROGRESS", "beforeId": null }`. Supply the ID of a task in the destination column to insert before it, or null to append. A stale destination returns HTTP 409. Moves are serialized with other writes to the same workspace.
+
+Use `GET /tasks?from=2026-12-01&to=2026-12-31&sort=due` under a project for tasks whose dates overlap an inclusive calendar range. Both dates are required when filtering. The endpoints use the same workspace permissions and pagination as the task list.

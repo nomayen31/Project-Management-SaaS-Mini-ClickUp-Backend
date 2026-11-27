@@ -53,6 +53,11 @@ export function projectRouter(db: PrismaClient, actor: (request: Request) => { i
   router.patch("/:projectId/tasks/:taskId", async (req, res) => {
     res.json({ data: await service.updateTask(task(req), schemas.taskUpdate.parse(req.body)) });
   });
+  router.post("/:projectId/tasks/:taskId/move", async (req, res) => {
+    const { status, beforeId } = schemas.taskMove.parse(req.body);
+    await service.moveTask(task(req), status, beforeId);
+    res.sendStatus(204);
+  });
   router.delete("/:projectId/tasks/:taskId", async (req, res) => {
     await service.deleteTask(task(req));
     res.sendStatus(204);

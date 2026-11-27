@@ -38,7 +38,16 @@ export const projectQuery = page.extend({ status: z.enum(ProjectStatus).optional
 export const addMember = z.object({ userId }).strict();
 export const taskCreate = task;
 export const taskUpdate = task.partial().refine((value) => Object.keys(value).length > 0);
-export const taskQuery = page.extend({ status: z.enum(TaskStatus).optional(), label: z.string().trim().max(30).optional() });
+export const taskQuery = page.extend({
+  status: z.enum(TaskStatus).optional(),
+  label: z.string().trim().max(30).optional(),
+  sort: z.enum(["newest", "due", "name", "board"]).default("newest"),
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+}).refine(({ from, to }) => (!from && !to) || (
+  from && to && from <= to && Date.parse(to) - Date.parse(from) <= 62 * 86_400_000
+));
+export const taskMove = z.object({ status: z.enum(TaskStatus), beforeId: id.nullable() }).strict();
 export const participant = z.object({ role: z.enum(TaskParticipantRole) }).strict();
 export const subtaskCreate = z.object({ title }).strict();
 export const subtaskUpdate = z.object({ title: title.optional(), completed: z.boolean().optional() }).strict()

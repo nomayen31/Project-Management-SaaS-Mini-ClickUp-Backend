@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
-import type { TaskParticipantRole } from "../../generated/prisma/enums.js";
+import type { TaskStatus, TaskParticipantRole } from "../../generated/prisma/enums.js";
 import { ApiError } from "../../lib/api-error.js";
 import type { z } from "zod";
 import type { projectQuery, projectUpdate, projectCreate, taskQuery, taskUpdate, taskCreate, subtaskUpdate } from "./schema.js";
@@ -44,6 +44,11 @@ async function projectAccess(tx: Tx, scope: ProjectScope, access: "read" | "mana
     if (!canEdit) throw new ApiError(403, "FORBIDDEN", "You cannot edit tasks in this project.");
   }
   return project;
+}
+
+async function nextBoardPosition(tx: Tx, projectId: string, status: TaskStatus) {
+  const result = await tx.task.aggregate({ where: { projectId, status }, _max: { boardPosition: true } });
+  return (result._max.boardPosition ?? -1) + 1;
 }
 
 async function existingTask(tx: Tx, scope: TaskScope, access: "read" | "task") {
@@ -171,8 +176,14 @@ export function createProjectService(db: PrismaClient) {
           projectId: scope.projectId, status: input.status, priority: input.priority,
           title: input.search ? { contains: input.search, mode: "insensitive" } : undefined,
           labels: input.label ? { has: input.label } : undefined,
+          OR: input.from && input.to ? [
+            { startDate: { not: null, lte: new Date(input.to) }, dueDate: { not: null, gte: new Date(input.from) } },
+            { startDate: null, dueDate: { gte: new Date(input.from), lte: new Date(input.to) } },
+            { dueDate: null, startDate: { gte: new Date(input.from), lte: new Date(input.to) } },
+          ] : undefined,
         };
-        const orderBy: Prisma.TaskOrderByWithRelationInput = input.sort === "name" ? { title: "asc" } :
+        const orderBy: Prisma.TaskOrderByWithRelationInput = input.sort === "board" ? { boardPosition: "asc" } :
+          input.sort === "name" ? { title: "asc" } :
           input.sort === "due" ? { dueDate: { sort: "asc", nulls: "last" } } : { createdAt: "desc" };
         const items = await tx.task.findMany({
           where, orderBy: [orderBy, { id: "asc" }], skip: (input.page - 1) * input.limit, take: input.limit, select: taskFields,
@@ -184,7 +195,10 @@ export function createProjectService(db: PrismaClient) {
       return write(scope, async (tx) => {
         await projectAccess(tx, scope, "task");
         checkDates(data.startDate, data.dueDate);
-        return taskResponse(await tx.task.create({ data: { projectId: scope.projectId, ...data }, select: taskFields }));
+        const boardPosition = await nextBoardPosition(tx, scope.projectId, data.status ?? "TODO");
+        return taskResponse(await tx.task.create({
+          data: { projectId: scope.projectId, ...data, boardPosition }, select: taskFields,
+        }));
       });
     },
     getTask(scope: TaskScope) {
@@ -194,7 +208,36 @@ export function createProjectService(db: PrismaClient) {
       return write(scope, async (tx) => {
         const task = await existingTask(tx, scope, "task");
         checkDates(data.startDate === undefined ? task.startDate : data.startDate, data.dueDate === undefined ? task.dueDate : data.dueDate);
-        return taskResponse(await tx.task.update({ where: { id: scope.taskId }, data, select: taskFields }));
+        const boardPosition = data.status && data.status !== task.status
+          ? await nextBoardPosition(tx, scope.projectId, data.status)
+          : undefined;
+        return taskResponse(await tx.task.update({
+          where: { id: scope.taskId }, data: { ...data, boardPosition }, select: taskFields,
+        }));
+      });
+    },
+    moveTask(scope: TaskScope, status: TaskStatus, beforeId: string | null) {
+      return write(scope, async (tx) => {
+        const current = await existingTask(tx, scope, "task");
+        if (beforeId === scope.taskId && current.status === status) return;
+
+        const destination = await tx.task.findMany({
+          where: { projectId: scope.projectId, status, id: { not: scope.taskId } },
+          orderBy: [{ boardPosition: "asc" }, { id: "asc" }], select: { id: true },
+        });
+        const order = destination.map(({ id }) => id);
+        const insertAt = beforeId === null ? order.length : order.indexOf(beforeId);
+        if (insertAt < 0) throw new ApiError(409, "STALE_BOARD", "The board changed. Refresh it and try again.");
+        order.splice(insertAt, 0, scope.taskId);
+
+        await tx.task.update({ where: { id: scope.taskId }, data: { status } });
+        await tx.$executeRaw`
+          UPDATE "task" AS task SET "boardPosition" = ordered.position::integer - 1
+          FROM jsonb_array_elements_text(${JSON.stringify(order)}::jsonb) WITH ORDINALITY AS ordered(id, position)
+          WHERE task."projectId" = ${scope.projectId}::uuid
+            AND task."id" = ordered.id::uuid
+            AND task."boardPosition" <> ordered.position::integer - 1
+        `;
       });
     },
     deleteTask(scope: TaskScope) {

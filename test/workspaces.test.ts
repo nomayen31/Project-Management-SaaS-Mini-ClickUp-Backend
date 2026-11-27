@@ -150,6 +150,34 @@ test("workspace and project isolation, role permissions, and single-use invitati
   assert.equal(result.total, 1);
   assert.equal(result.items[0].participants[0].user.id, viewer.id);
   assert.equal(result.items[0].subtasks[0].completed, true);
+  const firstTaskId = task.split("/").at(-1);
+  assert(firstTaskId);
+  const second = await request(tasks, viewer.cookie, "POST", { title: "Second task", dueDate: "2026-12-10" });
+  assert.equal(second.status, 201);
+  const secondId = (await second.json()).data.id;
+  const third = await request(tasks, viewer.cookie, "POST", { title: "Third task" });
+  assert.equal(third.status, 201);
+  const thirdId = (await third.json()).data.id;
+
+  async function boardIds(status: string) {
+    const result = await request(tasks + "?sort=board&status=" + status, owner.cookie);
+    assert.equal(result.status, 200);
+    return (await result.json()).data.items.map((item: { id: string }) => item.id);
+  }
+  assert.deepEqual(await boardIds("TODO"), [firstTaskId, secondId, thirdId]);
+  assert.equal((await request(tasks + "/" + thirdId + "/move", viewer.cookie, "POST", { status: "TODO", beforeId: firstTaskId })).status, 204);
+  assert.deepEqual(await boardIds("TODO"), [thirdId, firstTaskId, secondId]);
+  assert.equal((await request(task + "/move", viewer.cookie, "POST", { status: "IN_REVIEW", beforeId: secondId })).status, 409);
+  assert.equal((await request(task + "/move", viewer.cookie, "POST", { status: "IN_REVIEW", beforeId: null })).status, 204);
+  assert.deepEqual(await boardIds("TODO"), [thirdId, secondId]);
+  assert.deepEqual(await boardIds("IN_REVIEW"), [firstTaskId]);
+
+  const calendarRange = await request(tasks + "?from=2026-12-09&to=2026-12-11", owner.cookie);
+  assert.equal(calendarRange.status, 200);
+  const scheduled = (await calendarRange.json()).data.items.map((item: { id: string }) => item.id);
+  assert(scheduled.includes(firstTaskId) && scheduled.includes(secondId) && !scheduled.includes(thirdId));
+  assert.equal((await request(tasks + "?from=2026-12-09", owner.cookie)).status, 400);
+  assert.equal((await request(tasks + "?from=2026-12-09&to=2027-12-09", owner.cookie)).status, 400);
   const attachmentBase = task + "/attachments";
   function upload(contents: string, cookie: string, mediaType = "application/pdf") {
     return fetch(`${origin}/api/workspaces${attachmentBase}`, {
@@ -177,6 +205,7 @@ test("workspace and project isolation, role permissions, and single-use invitati
   assert.equal((await (await request(project, owner.cookie)).json()).data.completedTasks, 1);
   assert.equal((await request(workspace + "/members/" + viewer.id, admin.cookie, "PATCH", { role: "VIEWER" })).status, 200);
   assert.equal((await (await request(task, owner.cookie)).json()).data.participants.length, 0);
+  assert.equal((await request(task + "/move", viewer.cookie, "POST", { status: "TODO", beforeId: null })).status, 403);
   assert.equal((await request(task, viewer.cookie, "DELETE")).status, 403);
   assert.equal((await request(task, owner.cookie, "DELETE")).status, 204);
   assert(await db.attachmentCleanup.findUnique({ where: { storageId: savedAttachment.storageId } }));
