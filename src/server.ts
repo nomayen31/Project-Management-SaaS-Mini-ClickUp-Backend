@@ -3,10 +3,16 @@ import { createApp } from "./app.js";
 import { loadAuth } from "./auth.js";
 import { disconnectDatabase } from "./lib/database.js";
 
+import { loadAttachmentStorage, startAttachmentCleanup } from "./modules/projects/storage.js";
+
 const port = z.coerce.number().int().min(1).max(65535).parse(process.env.PORT ?? 4000);
-const server = createApp(loadAuth()).listen(port, () => console.log(`TaskFlow API listening on port ${port}`));
+const auth = loadAuth();
+const storage = loadAttachmentStorage();
+const stopAttachmentCleanup = auth && storage ? startAttachmentCleanup(auth.workspace.database, storage) : undefined;
+const server = createApp(auth, storage).listen(port, () => console.log(`TaskFlow API listening on port ${port}`));
 
 function shutdown() {
+  stopAttachmentCleanup?.();
   server.close(async () => {
     try {
       await disconnectDatabase();

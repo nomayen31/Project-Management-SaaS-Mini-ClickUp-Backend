@@ -49,3 +49,13 @@ The workspace migration adds workspaces, workspace memberships, and invitations.
 Owners manage admins, members, and viewers. Admins manage members and viewers. Both can rename the workspace. Members and viewers can read workspace details and the roster. Owner membership is protected from role edits and removal.
 
 Invitation links are shared manually. They expire after seven days and can be redeemed once by a verified account with the invited email address. Only the token hash is stored. Creating a replacement invitation generates a new link and invalidates the previous one.
+
+## Projects and tasks
+
+Project endpoints are rooted at `/api/workspaces/:workspaceId/projects`. Use GET or POST on the collection and GET, PATCH, or DELETE at `/:projectId`. Project owners and workspace admins manage project records and team membership. The project team is exposed under `/:projectId/members` with GET and POST, and DELETE at `/:memberId`.
+
+Task collection and detail endpoints use the same methods under `/:projectId/tasks`. Workspace members can edit tasks in projects they have joined. Workspace owners and admins can edit all tasks in their workspace. Viewers have read access. Task participants are managed with PUT and DELETE at `/:taskId/participants/:memberId`, and subtasks are managed with POST, PATCH, or DELETE under `/:taskId/subtasks`.
+
+Collection filters include `status`, `priority`, and `search`. Tasks also support `label`. Set `sort=newest|due|name`, `page` (one-based), and `limit` (1–50). Dates use YYYY-MM-DD on input. Project progress counts tasks with status DONE.
+
+An attachment collection lives at `/:taskId/attachments`. GET lists completed uploads. POST accepts PDF, PNG, or JPEG bytes, up to 3 MiB, with a matching Content-Type and an X-TaskFlow-File-Name header containing the percent-encoded filename. GET at `/:attachmentId/download` checks access before issuing a 60-second signed download URL. DELETE at `/:attachmentId` removes the metadata and queues provider cleanup, including when the task or project is deleted. Set the three Cloudinary variables in the backend environment to enable storage.

@@ -5,12 +5,13 @@ import { ZodError } from "zod";
 import { healthRouter } from "./modules/health.js";
 import { readinessRouter } from "./modules/readiness.js";
 import { workspaceRouter } from "./modules/workspaces/router.js";
+import type { AttachmentStorage } from "./modules/projects/storage.js";
 import { ApiError } from "./lib/api-error.js";
 
 type AuthConfig = NonNullable<ReturnType<typeof loadAuth>>;
 type AppAuth = Pick<AuthConfig, "instance" | "providers"> & { workspace?: AuthConfig["workspace"] };
 
-export function createApp(auth?: AppAuth) {
+export function createApp(auth?: AppAuth, storage?: AttachmentStorage) {
   const app = express();
   app.disable("x-powered-by");
   app.use((_request, response, next) => {
@@ -30,7 +31,7 @@ export function createApp(auth?: AppAuth) {
       return authHandler(request, response);
     });
     if (auth.workspace) {
-      app.use("/api/workspaces", workspaceRouter(auth.instance, auth.workspace.database, auth.workspace.origin));
+      app.use("/api/workspaces", workspaceRouter(auth.instance, auth.workspace.database, auth.workspace.origin, storage));
     }
     app.get("/api/me", async (request, response) => {
       response.set("Cache-Control", "no-store");
@@ -40,7 +41,7 @@ export function createApp(auth?: AppAuth) {
         return;
       }
       const { id, name, email, image } = session.user;
-      response.json({ data: { id, name, email, image } });
+      response.json({ data: { id, name, email, image: image ?? null } });
     });
   }
   app.use((_request, response) => {
@@ -53,6 +54,10 @@ export function createApp(auth?: AppAuth) {
     }
     if (error instanceof ApiError) {
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
+      return;
+    }
+    if (error?.type === "encoding.unsupported") {
+      response.status(415).json({ error: { code: "UNSUPPORTED_ENCODING", message: "Unsupported request encoding." } });
       return;
     }
     if (error?.type === "entity.too.large") {

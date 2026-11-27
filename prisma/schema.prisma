@@ -94,6 +94,7 @@ model Workspace {
   updatedAt   DateTime              @updatedAt
   memberships WorkspaceMembership[]
   invitations WorkspaceInvitation[]
+  projects    Project[]
 
   @@map("workspace")
 }
@@ -105,6 +106,8 @@ model WorkspaceMembership {
   createdAt   DateTime      @default(now())
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  projectMemberships ProjectMember[]
 
   @@id([workspaceId, userId])
   @@index([userId])
@@ -130,4 +133,134 @@ model WorkspaceInvitation {
   @@index([workspaceId, expiresAt])
   @@index([invitedById])
   @@map("workspace_invitation")
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETE
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskParticipantRole {
+  ASSIGNEE
+  COLLABORATOR
+}
+
+model Project {
+  id          String          @id @default(uuid()) @db.Uuid
+  workspaceId String          @db.Uuid
+  name        String          @db.VarChar(100)
+  description String          @default("")
+  status      ProjectStatus   @default(PLANNED)
+  priority    Priority        @default(MEDIUM)
+  dueDate     DateTime?       @db.Date
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members     ProjectMember[]
+  tasks       Task[]
+
+  @@unique([id, workspaceId])
+  @@index([workspaceId, status, createdAt])
+  @@map("project")
+}
+
+model ProjectMember {
+  projectId   String              @db.Uuid
+  workspaceId String              @db.Uuid
+  userId      String
+  project     Project             @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  membership  WorkspaceMembership @relation(fields: [workspaceId, userId], references: [workspaceId, userId], onDelete: Cascade)
+  tasks       TaskParticipant[]
+
+  @@id([projectId, userId])
+  @@index([workspaceId, userId])
+  @@map("project_member")
+}
+
+model Task {
+  id           String            @id @default(uuid()) @db.Uuid
+  projectId    String            @db.Uuid
+  title        String            @db.VarChar(150)
+  description  String            @default("")
+  status       TaskStatus        @default(TODO)
+  priority     Priority          @default(MEDIUM)
+  startDate    DateTime?         @db.Date
+  dueDate      DateTime?         @db.Date
+  labels       String[]          @default([])
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  participants TaskParticipant[]
+  subtasks     Subtask[]
+  attachments  Attachment[]
+
+  @@unique([id, projectId])
+  @@index([projectId, status, createdAt])
+  @@index([projectId, dueDate])
+  @@map("task")
+}
+
+model TaskParticipant {
+  taskId    String              @db.Uuid
+  projectId String              @db.Uuid
+  userId    String
+  role      TaskParticipantRole
+  task      Task                @relation(fields: [taskId, projectId], references: [id, projectId], onDelete: Cascade)
+  member    ProjectMember       @relation(fields: [projectId, userId], references: [projectId, userId], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([projectId, userId])
+  @@map("task_participant")
+}
+
+model Subtask {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @db.Uuid
+  title     String   @db.VarChar(150)
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@map("subtask")
+}
+
+model Attachment {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @db.Uuid
+  storageId String   @unique
+  name      String   @db.VarChar(150)
+  bytes     Int
+  mediaType String   @db.VarChar(32)
+  ready     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([ready, createdAt])
+  @@map("attachment")
+}
+
+model AttachmentCleanup {
+  storageId String   @id
+  retryAt   DateTime @default(now())
+
+  @@index([retryAt])
+  @@map("attachment_cleanup")
 }

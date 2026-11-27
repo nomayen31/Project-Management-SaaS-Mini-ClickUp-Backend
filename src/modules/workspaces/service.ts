@@ -95,6 +95,9 @@ export function createWorkspaceService(db: PrismaClient) {
         }
 
         assertManagesRole(actor.role, role);
+        if (role === "VIEWER") {
+          await tx.projectMember.deleteMany({ where: { workspaceId, userId: targetId } });
+        }
         return tx.workspaceMembership.update({ where, data: { role }, select: membershipFields });
       });
     },

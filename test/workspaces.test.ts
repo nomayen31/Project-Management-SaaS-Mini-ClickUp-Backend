@@ -10,16 +10,18 @@ import { createAuth } from "../src/auth.js";
 
 const testDatabase = process.env.TEST_DATABASE_URL;
 
-test("workspace permissions and single-use invitations", {
+test("workspace and project isolation, role permissions, and single-use invitations", {
   skip: !testDatabase && "Set TEST_DATABASE_URL to a migrated, isolated PostgreSQL database.",
 }, async (context) => {
   assert(testDatabase);
   const db = new PrismaClient({ adapter: new PrismaPg(testDatabase) });
+  const uploaded = new Set<string>();
   const workspaceIds: string[] = [];
   const emails: string[] = [];
   context.after(async () => {
     try {
       await db.workspace.deleteMany({ where: { id: { in: workspaceIds } } });
+      await db.attachmentCleanup.deleteMany({ where: { storageId: { in: [...uploaded] } } });
       await db.user.deleteMany({ where: { email: { in: emails } } });
     } finally { await db.$disconnect(); }
   });
@@ -38,6 +40,10 @@ test("workspace permissions and single-use invitations", {
   app = createApp({
     instance: auth, workspace: { database: db, origin },
     providers: { email: true, google: false, dash: false, sentinel: false },
+  }, {
+    async upload(id) { uploaded.add(id); },
+    download(id) { return "https://storage.example/" + id; },
+    async remove(id) { uploaded.delete(id); },
   });
 
   async function user(name: string) {
@@ -113,7 +119,69 @@ test("workspace permissions and single-use invitations", {
   assert.equal((await request(workspace + "/invitations", viewer.cookie)).status, 403);
   assert.equal((await request(workspace, viewer.cookie, "PATCH", { name: "Blocked" })).status, 403);
   assert.equal((await request(workspace, admin.cookie, "PATCH", { name: "New name" })).status, 200);
+  const projects = workspace + "/projects";
+  const createProject = await request(projects, owner.cookie, "POST", { name: "Launch", dueDate: "2027-01-01" });
+  assert.equal(createProject.status, 201);
+  const projectId = (await createProject.json()).data.id;
+  const project = projects + "/" + projectId;
+  const tasks = project + "/tasks";
+  assert.equal((await request(`/${otherWorkspaceId}/projects/${projectId}`, outsider.cookie)).status, 404);
+  assert.equal((await request(project, viewer.cookie, "PATCH", { name: "Blocked" })).status, 403);
+  assert.equal((await request(tasks, viewer.cookie, "POST", { title: "Blocked" })).status, 403);
+  assert.equal((await request(project + "/members", owner.cookie, "POST", { userId: outsider.id })).status, 404);
+  assert.equal((await request(project + "/members", owner.cookie, "POST", { userId: viewer.id })).status, 400);
   assert.equal((await request(workspace + "/members/" + viewer.id, admin.cookie, "PATCH", { role: "MEMBER" })).status, 200);
+  assert.equal((await request(tasks, viewer.cookie, "POST", { title: "Still blocked" })).status, 403);
+  assert.equal((await request(project + "/members", admin.cookie, "POST", { userId: viewer.id })).status, 204);
+
+  const taskResponse = await request(tasks, viewer.cookie, "POST", {
+    title: "Ship launch", priority: "HIGH", startDate: "2026-12-01", dueDate: "2026-12-15", labels: ["Launch"],
+  });
+  assert.equal(taskResponse.status, 201);
+  const task = tasks + "/" + (await taskResponse.json()).data.id;
+  assert.equal((await request(task, viewer.cookie, "PATCH", { dueDate: "2026-11-01" })).status, 400);
+  assert.equal((await request(task + "/participants/" + outsider.id, viewer.cookie, "PUT", { role: "ASSIGNEE" })).status, 400);
+  assert.equal((await request(task + "/participants/" + viewer.id, viewer.cookie, "PUT", { role: "ASSIGNEE" })).status, 204);
+  const subtaskResponse = await request(task + "/subtasks", viewer.cookie, "POST", { title: "Review" });
+  assert.equal(subtaskResponse.status, 201);
+  const subtaskId = (await subtaskResponse.json()).data.id;
+  assert.equal((await request(task + "/subtasks/" + subtaskId, viewer.cookie, "PATCH", { completed: true })).status, 204);
+  const result = (await (await request(tasks + "?priority=HIGH&label=Launch&sort=due&limit=1", viewer.cookie)).json()).data;
+  assert.equal(result.total, 1);
+  assert.equal(result.items[0].participants[0].user.id, viewer.id);
+  assert.equal(result.items[0].subtasks[0].completed, true);
+  const attachmentBase = task + "/attachments";
+  function upload(contents: string, cookie: string, mediaType = "application/pdf") {
+    return fetch(`${origin}/api/workspaces${attachmentBase}`, {
+      method: "POST", headers: { Origin: origin, Cookie: cookie, "Content-Type": mediaType, "X-TaskFlow-File-Name": "launch.pdf" },
+      body: contents,
+    });
+  }
+  assert.equal((await upload("invalid", owner.cookie)).status, 415);
+  assert.equal((await upload("%PDF-fixture", outsider.cookie)).status, 404);
+  const attached = await upload("%PDF-fixture", viewer.cookie);
+  assert.equal(attached.status, 201);
+  const attachmentId = (await attached.json()).data.id;
+  const savedAttachment = await db.attachment.findUniqueOrThrow({ where: { id: attachmentId } });
+  assert.equal(savedAttachment.ready, true);
+  assert(uploaded.has(savedAttachment.storageId));
+  const download = async (cookie: string) => fetch(`${origin}/api/workspaces${attachmentBase}/${attachmentId}/download`, {
+    redirect: "manual", headers: { Cookie: cookie },
+  });
+  assert.equal((await download(outsider.cookie)).status, 404);
+  assert.equal((await download(viewer.cookie)).status, 302);
+  const listed = (await (await request(attachmentBase, owner.cookie)).json()).data.items;
+  assert.equal(listed.length, 1);
+  assert(!("storageId" in listed[0]));
+  assert.equal((await request(task, viewer.cookie, "PATCH", { status: "DONE" })).status, 200);
+  assert.equal((await (await request(project, owner.cookie)).json()).data.completedTasks, 1);
+  assert.equal((await request(workspace + "/members/" + viewer.id, admin.cookie, "PATCH", { role: "VIEWER" })).status, 200);
+  assert.equal((await (await request(task, owner.cookie)).json()).data.participants.length, 0);
+  assert.equal((await request(task, viewer.cookie, "DELETE")).status, 403);
+  assert.equal((await request(task, owner.cookie, "DELETE")).status, 204);
+  assert(await db.attachmentCleanup.findUnique({ where: { storageId: savedAttachment.storageId } }));
+  assert.equal((await request(project, admin.cookie, "DELETE")).status, 204);
+  assert.equal((await request(project, owner.cookie)).status, 404);
   assert.equal((await request(workspace + "/members/" + admin.id, owner.cookie, "PATCH", { role: "OWNER" })).status, 400);
   assert.equal((await request(workspace + "/members/" + viewer.id, admin.cookie, "DELETE")).status, 204);
   assert.equal((await request(workspace, viewer.cookie)).status, 404);
