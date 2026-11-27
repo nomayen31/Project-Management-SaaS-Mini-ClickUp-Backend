@@ -91,3 +91,9 @@ The backend repository includes a Vercel configuration for Express. Its JavaScri
 Use the same backend environment variables listed above. Set `APP_ORIGIN` to the exact Vercel frontend origin and set the frontend's `BACKEND_ORIGIN` to the backend's public HTTPS origin. Apply migrations with `npm run db:migrate:deploy` against the intended production database before enabling auth. Run migrations separately from Vercel builds.
 
 When production auth configuration is incomplete, the Vercel function still serves health and provider status. Authenticated routes are available after the required variables are configured. The Vercel handler does not start a persistent attachment cleanup worker. Run the cleanup worker on a persistent process before enabling production attachments, or provide scheduled cleanup that drains the attachment cleanup queue.
+
+### Google sign-in without email delivery
+
+For an SMTP-free setup, configure Google OAuth using a Web application client. Add `https://taskflow-frontend-plum-beta.vercel.app/api/auth/callback/google` as the authorized redirect URI, or use the equivalent callback for your configured `APP_ORIGIN`. Store `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the backend Production environment. Apply the Prisma migrations before enabling sign-in.
+
+With Google configured and SMTP unset, TaskFlow offers Google sign-in only. Password registration, email verification messages, and password-reset messages are enabled once SMTP is configured.
