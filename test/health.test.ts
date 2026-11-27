@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
+import { disconnectDatabase } from "../src/lib/database.js";
 import { app } from "../src/app.js";
 
 test("the API returns health and consistent errors for unconfigured database and missing routes", async (context) => {
@@ -34,4 +35,24 @@ test("the API returns health and consistent errors for unconfigured database and
   const missing = await fetch(`${base}/api/missing`);
   assert.equal(missing.status, 404);
   assert.deepEqual(await missing.json(), { error: { code: "NOT_FOUND", message: "Route not found." } });
+});
+
+test("readiness confirms a migrated database", {
+  skip: !process.env.TEST_DATABASE_URL && "Set TEST_DATABASE_URL to a migrated, isolated PostgreSQL database.",
+}, async (context) => {
+  const original = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL!;
+  const server = app.listen(0, "127.0.0.1");
+  context.after(async () => {
+    server.close();
+    if (original === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = original;
+    await disconnectDatabase();
+  });
+  await once(server, "listening");
+  const address = server.address();
+  assert(address && typeof address !== "string");
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/ready`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { data: { status: "ready", database: "connected", schema: "current" } });
 });

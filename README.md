@@ -18,7 +18,7 @@ The first migration creates the tables for users, sessions, accounts, verificati
 ## Service endpoints
 
 - `GET /api/health` reports whether Express is running, independent of PostgreSQL.
-- `GET /api/ready` runs a PostgreSQL query via Prisma. It returns 200 with `{"data":{"status":"ready","database":"connected"}}` on success, or 503 with error code `DATABASE_UNAVAILABLE` if no database is configured or the query fails.
+- `GET /api/ready` checks PostgreSQL connectivity and the required Prisma migration. It returns 200 with `{"data":{"status":"ready","database":"connected","schema":"current"}}` when ready, or 503 with error code `DATABASE_UNAVAILABLE` when the database or schema is unavailable.
 
 Run `npm run typecheck`, `npm test`, and `npm run build` to verify the API.
 
@@ -109,3 +109,13 @@ Under `/api/workspaces/:workspaceId`, use `GET /activity-feed?page=1` for the wo
 For an SMTP-free setup, configure Google OAuth using a Web application client. Add `https://taskflow-frontend-plum-beta.vercel.app/api/auth/callback/google` as the authorized redirect URI, or use the equivalent callback for your configured `APP_ORIGIN`. Store `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the backend Production environment. Apply the Prisma migrations before enabling sign-in.
 
 With Google configured and SMTP unset, TaskFlow offers Google sign-in only. Password registration, email verification messages, and password-reset messages are enabled once SMTP is configured.
+
+## Release verification
+
+1. Check that both GitHub Actions builds pass, including integration tests against the workflow’s isolated PostgreSQL.
+2. Confirm that the live backend has a valid auth provider. Use either a Google OAuth web client with the frontend callback or an authenticated SMTP server. Keep all credential values in Vercel.
+3. Check the target Neon database and take a restorable backup or checkpoint. Apply pending migrations with `npm run db:migrate:deploy` using its direct connection, then verify `npm run db:migrate:status` before promoting the backend.
+4. Confirm that the production frontend proxies to the promoted backend. Run `npm run smoke -- <frontend-origin> <backend-origin>` with the public HTTPS origins. Then verify sign-in, invitations, task movement, notifications, and any enabled file uploads through the frontend.
+5. If a release is unhealthy, roll back both Vercel applications to their previous compatible versions. Review schema compatibility before rolling back application code. Preserve the database and migration history.
+
+The HTTP smoke check verifies frontend pages, protected profile access, database migration readiness, and the presence of a sign-in provider both directly and through the proxy. Google authorization and email delivery still need a live test with configured providers. Collaboration uses periodic refresh while Socket.IO remains pending.

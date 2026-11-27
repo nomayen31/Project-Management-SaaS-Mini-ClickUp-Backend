@@ -16,7 +16,8 @@
     "predev": "npm run db:generate",
     "prebuild": "npm run db:generate",
     "pretypecheck": "npm run db:generate",
-    "pretest": "npm run db:generate"
+    "pretest": "npm run db:generate",
+    "smoke": "node scripts/smoke.mjs"
   },
   "repository": {
     "type": "git",
