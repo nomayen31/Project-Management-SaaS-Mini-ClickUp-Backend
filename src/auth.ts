@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { dash, sentinel } from "@better-auth/infra";
-import { Resend } from "resend";
+import { loadEmailSender, type Mail } from "./lib/email.js";
 import { z } from "zod";
 import { getDatabase } from "./lib/database.js";
 
@@ -15,30 +15,14 @@ const settings = z.object({
   }),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-  RESEND_API_KEY: z.string().min(1).optional(),
-  AUTH_EMAIL_FROM: z.string().min(1).optional(),
   BETTER_AUTH_API_KEY: z.string().min(1).optional(),
   AUTH_SENTINEL: z.enum(["true", "false"]).default("false"),
 }).refine((env) => Boolean(env.GOOGLE_CLIENT_ID) === Boolean(env.GOOGLE_CLIENT_SECRET))
-  .refine((env) => Boolean(env.RESEND_API_KEY) === Boolean(env.AUTH_EMAIL_FROM))
-  .refine((env) => env.AUTH_SENTINEL === "false" || Boolean(env.BETTER_AUTH_API_KEY))
-  .refine((env) => process.env.NODE_ENV !== "production" || Boolean(env.RESEND_API_KEY));
+  .refine((env) => env.AUTH_SENTINEL === "false" || Boolean(env.BETTER_AUTH_API_KEY));
 
 type AuthSettings = z.output<typeof settings>;
-type Mail = { to: string; subject: string; text: string };
 
-export function createAuth(config: AuthSettings, database: NonNullable<ReturnType<typeof getDatabase>>, sendMail?: (mail: Mail) => Promise<void>) {
-  const resend = config.RESEND_API_KEY ? new Resend(config.RESEND_API_KEY) : undefined;
-  const deliver = sendMail ?? (resend && config.AUTH_EMAIL_FROM
-    ? async (mail: Mail) => {
-        const { error } = await resend.emails.send({ ...mail, from: config.AUTH_EMAIL_FROM! });
-        if (error) {
-          console.error("Authentication email delivery failed.");
-          throw new Error("Authentication email delivery failed.");
-        }
-      }
-    : undefined);
-
+export function createAuth(config: AuthSettings, database: NonNullable<ReturnType<typeof getDatabase>>, deliver?: (mail: Mail) => Promise<void>) {
   return betterAuth({
     baseURL: config.APP_ORIGIN,
     basePath: "/api/auth",
@@ -80,11 +64,14 @@ export function loadAuth() {
   const parsed = settings.safeParse(process.env);
   const database = getDatabase();
   if (!parsed.success || !database) throw new Error("Invalid TaskFlow authentication configuration.");
+  const deliver = loadEmailSender();
+  if (!deliver && process.env.NODE_ENV === "production") throw new Error("SMTP is required for production authentication.");
+
   return {
-    instance: createAuth(parsed.data, database),
+    instance: createAuth(parsed.data, database, deliver),
     workspace: { database, origin: parsed.data.APP_ORIGIN },
     providers: {
-      email: Boolean(parsed.data.RESEND_API_KEY),
+      email: Boolean(deliver),
       google: Boolean(parsed.data.GOOGLE_CLIENT_ID),
       dash: Boolean(parsed.data.BETTER_AUTH_API_KEY),
       sentinel: parsed.data.AUTH_SENTINEL === "true",

@@ -26,7 +26,7 @@ Run `npm run typecheck`, `npm test`, and `npm run build` to verify the API.
 
 Apply the committed auth migration to an isolated development database with `npm run db:migrate:deploy`. Set `APP_ORIGIN` to the exact public origin that serves Next.js and forwards `/api/auth` to Express. Use HTTPS for deployed environments. For local development, use one hostname consistently, for example `http://localhost:3000`.
 
-Generate a new session secret with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"` and store it in the backend environment as `BETTER_AUTH_SECRET`. Set `RESEND_API_KEY` and `AUTH_EMAIL_FROM` with a verified sender to enable email authentication. With Google enabled, register `<APP_ORIGIN>/api/auth/callback/google` as the authorized redirect URI and set both Google variables. Set a fresh `BETTER_AUTH_API_KEY` to enable Dash and enable `AUTH_SENTINEL` only when the Infra plan supports it.
+Generate a new session secret with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"` and store it in the backend environment as `BETTER_AUTH_SECRET`. Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, and `AUTH_EMAIL_FROM` to enable email authentication through your mail server. Use an authorized sender address. The default port is 587 with required STARTTLS. Use port 465 for implicit TLS, or set `SMTP_TLS_MODE` for custom ports. With Google enabled, register `<APP_ORIGIN>/api/auth/callback/google` as the authorized redirect URI and set both Google variables. Set a fresh `BETTER_AUTH_API_KEY` to enable Dash and enable `AUTH_SENTINEL` only when the Infra plan supports it.
 
 Express handles Better Auth routes at `/api/auth`. `GET /api/auth-providers` exposes only provider availability flags. `GET /api/me` requires a valid cookie-backed session. In local development, the health endpoints remain available when the auth secret is unset.
 
@@ -78,7 +78,7 @@ Set these variables in the backend service environment:
 | `DIRECT_URL` | Rotated direct Neon URL for migrations, on the same branch and database |
 | `APP_ORIGIN` | Exact public HTTPS origin of the Vercel frontend |
 | `BETTER_AUTH_SECRET` | New random server secret of at least 32 characters |
-| `RESEND_API_KEY` and `AUTH_EMAIL_FROM` | Resend credentials and verified sender for production email authentication |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, and `AUTH_EMAIL_FROM` | SMTP server, credentials, and authorized sender address for production email authentication |
 
 Set the optional Google, Better Auth Infra, and Cloudinary variables in the backend service when enabling those integrations. Generate a public HTTPS domain for the Railway service. After the service returns 200 from both `/api/health` and `/api/ready`, set the Vercel frontend's production `BACKEND_ORIGIN` to that Railway origin and redeploy the frontend. Then repeat both checks through the frontend domain.
 
