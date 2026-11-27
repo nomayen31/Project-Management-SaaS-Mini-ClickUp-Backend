@@ -11,8 +11,7 @@ import { ApiError } from "./lib/api-error.js";
 type AuthConfig = NonNullable<ReturnType<typeof loadAuth>>;
 type AppAuth = Pick<AuthConfig, "instance" | "providers"> & { workspace?: AuthConfig["workspace"] };
 
-export function createApp(auth?: AppAuth, storage?: AttachmentStorage) {
-  const app = express();
+export function createApp(auth?: AppAuth, storage?: AttachmentStorage, app = express()) {
   app.disable("x-powered-by");
   app.use((_request, response, next) => {
     response.set("X-Content-Type-Options", "nosniff");
@@ -77,7 +76,7 @@ export function createApp(auth?: AppAuth, storage?: AttachmentStorage) {
 
 export const app = createApp();
 
-function createVercelApp() {
+export function createVercelApp(app: ReturnType<typeof express>) {
   let auth: ReturnType<typeof loadAuth> = undefined;
   let storage: AttachmentStorage | undefined;
   try {
@@ -92,7 +91,5 @@ function createVercelApp() {
     console.error("Attachment storage is unavailable. Check the backend deployment configuration.");
   }
 
-  return createApp(auth, storage);
+  return createApp(auth, storage, app);
 }
-
-export default process.env.VERCEL === "1" ? createVercelApp() : app;
