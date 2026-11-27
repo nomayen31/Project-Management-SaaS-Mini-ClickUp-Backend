@@ -65,14 +65,17 @@ export function loadAuth() {
   const database = getDatabase();
   if (!parsed.success || !database) throw new Error("Invalid TaskFlow authentication configuration.");
   const deliver = loadEmailSender();
-  if (!deliver && process.env.NODE_ENV === "production") throw new Error("SMTP is required for production authentication.");
+  const googleEnabled = Boolean(parsed.data.GOOGLE_CLIENT_ID && parsed.data.GOOGLE_CLIENT_SECRET);
+  if (!deliver && !googleEnabled && process.env.NODE_ENV === "production") {
+    throw new Error("Production authentication requires SMTP or Google OAuth.");
+  }
 
   return {
     instance: createAuth(parsed.data, database, deliver),
     workspace: { database, origin: parsed.data.APP_ORIGIN },
     providers: {
       email: Boolean(deliver),
-      google: Boolean(parsed.data.GOOGLE_CLIENT_ID),
+      google: googleEnabled,
       dash: Boolean(parsed.data.BETTER_AUTH_API_KEY),
       sentinel: parsed.data.AUTH_SENTINEL === "true",
     },

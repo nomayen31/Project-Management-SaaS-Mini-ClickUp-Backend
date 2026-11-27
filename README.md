@@ -103,3 +103,9 @@ Under `/api/workspaces/:workspaceId`, use `GET /activity-feed?page=1` for the wo
 `GET /api/workspaces/:workspaceId/dashboard?date=YYYY-MM-DD` returns the project and task status counts, overdue and unassigned open-task counts, deadlines within the next 14 days, and the ten team members with the highest open assignment counts. The date defaults to the current UTC date. Completed tasks are excluded from overdue, upcoming, and open workload counts. A task with two assignees counts once in each assignee's workload.
 
 `GET /api/me/settings` returns the current user's notification settings. `PATCH /api/me/settings` accepts `{ "mentionNotifications": false }` to pause new mention notifications. Existing inbox entries remain available.
+
+### Google sign-in without email delivery
+
+For an SMTP-free setup, configure Google OAuth using a Web application client. Add `https://taskflow-frontend-plum-beta.vercel.app/api/auth/callback/google` as the authorized redirect URI, or use the equivalent callback for your configured `APP_ORIGIN`. Store `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the backend Production environment. Apply the Prisma migrations before enabling sign-in.
+
+With Google configured and SMTP unset, TaskFlow offers Google sign-in only. Password registration, email verification messages, and password-reset messages are enabled once SMTP is configured.
