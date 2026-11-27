@@ -12,6 +12,7 @@ model User {
   name                 String
   email                String                  @unique
   emailVerified        Boolean
+  mentionNotifications Boolean                 @default(true)
   image                String?
   createdAt            DateTime
   updatedAt            DateTime

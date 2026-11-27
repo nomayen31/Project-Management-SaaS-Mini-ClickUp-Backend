@@ -6,6 +6,7 @@ import { healthRouter } from "./modules/health.js";
 import { readinessRouter } from "./modules/readiness.js";
 import { workspaceRouter } from "./modules/workspaces/router.js";
 import { loadAttachmentStorage, type AttachmentStorage } from "./modules/projects/storage.js";
+import { accountRouter } from "./modules/account.js";
 import { ApiError } from "./lib/api-error.js";
 
 type AuthConfig = NonNullable<ReturnType<typeof loadAuth>>;
@@ -30,6 +31,7 @@ export function createApp(auth?: AppAuth, storage?: AttachmentStorage, app = exp
       return authHandler(request, response);
     });
     if (auth.workspace) {
+      app.use("/api/me", accountRouter(auth.instance, auth.workspace));
       app.use("/api/workspaces", workspaceRouter(auth.instance, auth.workspace.database, auth.workspace.origin, storage));
     }
     app.get("/api/me", async (request, response) => {

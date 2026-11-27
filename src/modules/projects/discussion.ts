@@ -34,7 +34,7 @@ export function discussionRouter(db: PrismaClient, task: (request: Request) => T
     const comment = await service.withTask(scope, "task", async (tx) => {
       const mentions = [...new Set(input.mentions)].filter((id) => id !== scope.userId);
       const recipients = await tx.workspaceMembership.findMany({
-        where: { workspaceId: scope.workspaceId, userId: { in: mentions } }, select: { userId: true },
+        where: { workspaceId: scope.workspaceId, userId: { in: mentions } }, select: { userId: true, user: { select: { mentionNotifications: true } } },
       });
       if (recipients.length !== mentions.length) {
         throw new ApiError(400, "INVALID_MENTION", "Mention people in this workspace.");
@@ -45,9 +45,10 @@ export function discussionRouter(db: PrismaClient, task: (request: Request) => T
         select: { id: true, body: true, createdAt: true, author: { select: publicUser } },
       });
       await tx.taskActivity.create({ data: { taskId: scope.taskId, actorId: scope.userId, type: "COMMENTED" } });
-      if (recipients.length) {
+      const notified = recipients.filter(({ user }) => user.mentionNotifications);
+      if (notified.length) {
         await tx.workspaceNotification.createMany({
-          data: recipients.map(({ userId }) => ({
+          data: notified.map(({ userId }) => ({
             workspaceId: scope.workspaceId, taskId: scope.taskId, actorId: scope.userId, userId,
           })),
         });

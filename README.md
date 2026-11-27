@@ -97,3 +97,9 @@ When production auth configuration is incomplete, the Vercel function still serv
 Under a task, `GET /comments?page=1` and `GET /activity?page=1` return the recent discussion and activity. `POST /comments` takes a body and an optional list of up to ten workspace member IDs to notify. The comment, activity event, and notifications are committed together.
 
 Under `/api/workspaces/:workspaceId`, use `GET /activity-feed?page=1` for the workspace activity feed, `GET /notifications?page=1` for the signed-in member’s inbox, and `PATCH /notifications/:notificationId/read` to mark a notification as read. These endpoints require a verified session and workspace membership.
+
+## Dashboard and preferences
+
+`GET /api/workspaces/:workspaceId/dashboard?date=YYYY-MM-DD` returns the project and task status counts, overdue and unassigned open-task counts, deadlines within the next 14 days, and the ten team members with the highest open assignment counts. The date defaults to the current UTC date. Completed tasks are excluded from overdue, upcoming, and open workload counts. A task with two assignees counts once in each assignee's workload.
+
+`GET /api/me/settings` returns the current user's notification settings. `PATCH /api/me/settings` accepts `{ "mentionNotifications": false }` to pause new mention notifications. Existing inbox entries remain available.

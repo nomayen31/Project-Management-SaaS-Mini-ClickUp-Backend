@@ -199,6 +199,29 @@ test("workspace and project isolation, role permissions, and single-use invitati
   assert.equal((await (await request(workspace + "/notifications", admin.cookie)).json()).data.unread, 0);
   assert.equal((await request(workspace + "/activity-feed", outsider.cookie)).status, 404);
   assert((await (await request(workspace + "/activity-feed", owner.cookie)).json()).data.items.length > 0);
+  const settingsUrl = origin + "/api/me/settings";
+  const settingsHeaders = { Cookie: admin.cookie, Origin: origin, "Content-Type": "application/json" };
+  assert.equal((await fetch(settingsUrl)).status, 401);
+  assert.equal((await (await fetch(settingsUrl, { headers: settingsHeaders })).json()).data.mentionNotifications, true);
+  assert.equal((await fetch(settingsUrl, { method: "PATCH", headers: { ...settingsHeaders, Origin: "https://untrusted.example" },
+    body: JSON.stringify({ mentionNotifications: false }) })).status, 403);
+  assert.equal((await fetch(settingsUrl, { method: "PATCH", headers: settingsHeaders,
+    body: JSON.stringify({ mentionNotifications: false }) })).status, 200);
+  assert.equal((await request(task + "/comments", viewer.cookie, "POST", { body: "Silent mention", mentions: [admin.id] })).status, 201);
+  const optedOutInbox = await (await request(workspace + "/notifications", admin.cookie)).json();
+  assert.equal(optedOutInbox.data.items.length, 1);
+
+  const dashboardPath = workspace + "/dashboard?date=2026-12-16";
+  assert.equal((await request(dashboardPath, outsider.cookie)).status, 404);
+  assert.equal((await request(workspace + "/dashboard?date=invalid", owner.cookie)).status, 400);
+  const dashboard = (await (await request(dashboardPath, owner.cookie)).json()).data;
+  assert.equal(dashboard.overdue, 2);
+  assert.equal(dashboard.unassigned, 2);
+  assert.deepEqual(dashboard.workload.find((item: { userId: string }) => item.userId === viewer.id), {
+    userId: viewer.id, name: "Viewer", open: 1, overdue: 1,
+  });
+  const earlier = (await (await request(workspace + "/dashboard?date=2026-12-09", viewer.cookie)).json()).data;
+  assert.deepEqual(earlier.upcomingTasks.map((item: { id: string }) => item.id), [secondId, firstTaskId]);
   const attachmentBase = task + "/attachments";
   function upload(contents: string, cookie: string, mediaType = "application/pdf") {
     return fetch(`${origin}/api/workspaces${attachmentBase}`, {

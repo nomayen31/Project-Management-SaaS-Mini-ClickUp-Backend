@@ -1,6 +1,7 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
+import { getWorkspaceDashboard } from "./dashboard.js";
 import { ApiError } from "../../lib/api-error.js";
 import { pageInput, pageSize } from "../projects/discussion.js";
 
@@ -17,6 +18,12 @@ export function workspaceInboxRouter(db: PrismaClient, actor: (req: Request) => 
     });
     if (!member) throw new ApiError(404, "WORKSPACE_NOT_FOUND", "Workspace not found.");
   }
+
+  router.get("/dashboard", async (req, res) => {
+    const date = z.iso.date().optional().parse(req.query.date) ?? new Date().toISOString().slice(0, 10);
+    const data = await getWorkspaceDashboard(db, workspace(req), actor(req).id, date);
+    res.json({ data });
+  });
 
   router.get("/notifications", async (req, res) => {
     const workspaceId = workspace(req);
