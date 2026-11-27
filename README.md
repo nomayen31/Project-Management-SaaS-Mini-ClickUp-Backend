@@ -91,3 +91,9 @@ The backend repository includes a Vercel configuration for Express. Its JavaScri
 Use the same backend environment variables listed above. Set `APP_ORIGIN` to the exact Vercel frontend origin and set the frontend's `BACKEND_ORIGIN` to the backend's public HTTPS origin. Apply migrations with `npm run db:migrate:deploy` against the intended production database before enabling auth. Run migrations separately from Vercel builds.
 
 When production auth configuration is incomplete, the Vercel function still serves health and provider status. Authenticated routes are available after the required variables are configured. The Vercel handler does not start a persistent attachment cleanup worker. Run the cleanup worker on a persistent process before enabling production attachments, or provide scheduled cleanup that drains the attachment cleanup queue.
+
+## Collaboration
+
+Under a task, `GET /comments?page=1` and `GET /activity?page=1` return the recent discussion and activity. `POST /comments` takes a body and an optional list of up to ten workspace member IDs to notify. The comment, activity event, and notifications are committed together.
+
+Under `/api/workspaces/:workspaceId`, use `GET /activity-feed?page=1` for the workspace activity feed, `GET /notifications?page=1` for the signed-in member’s inbox, and `PATCH /notifications/:notificationId/read` to mark a notification as read. These endpoints require a verified session and workspace membership.

@@ -196,9 +196,11 @@ export function createProjectService(db: PrismaClient) {
         await projectAccess(tx, scope, "task");
         checkDates(data.startDate, data.dueDate);
         const boardPosition = await nextBoardPosition(tx, scope.projectId, data.status ?? "TODO");
-        return taskResponse(await tx.task.create({
+        const task = await tx.task.create({
           data: { projectId: scope.projectId, ...data, boardPosition }, select: taskFields,
-        }));
+        });
+        await tx.taskActivity.create({ data: { taskId: task.id, actorId: scope.userId, type: "CREATED" } });
+        return taskResponse(task);
       });
     },
     getTask(scope: TaskScope) {
@@ -211,9 +213,13 @@ export function createProjectService(db: PrismaClient) {
         const boardPosition = data.status && data.status !== task.status
           ? await nextBoardPosition(tx, scope.projectId, data.status)
           : undefined;
-        return taskResponse(await tx.task.update({
+        const updated = await tx.task.update({
           where: { id: scope.taskId }, data: { ...data, boardPosition }, select: taskFields,
-        }));
+        });
+        await tx.taskActivity.create({
+          data: { taskId: scope.taskId, actorId: scope.userId, type: boardPosition === undefined ? "UPDATED" : "MOVED", detail: boardPosition === undefined ? null : updated.status },
+        });
+        return taskResponse(updated);
       });
     },
     moveTask(scope: TaskScope, status: TaskStatus, beforeId: string | null) {
@@ -231,6 +237,7 @@ export function createProjectService(db: PrismaClient) {
         order.splice(insertAt, 0, scope.taskId);
 
         await tx.task.update({ where: { id: scope.taskId }, data: { status } });
+        await tx.taskActivity.create({ data: { taskId: scope.taskId, actorId: scope.userId, type: "MOVED", detail: status } });
         await tx.$executeRaw`
           UPDATE "task" AS task SET "boardPosition" = ordered.position::integer - 1
           FROM jsonb_array_elements_text(${JSON.stringify(order)}::jsonb) WITH ORDINALITY AS ordered(id, position)

@@ -6,6 +6,7 @@ import type { PrismaClient } from "../../generated/prisma/client.js";
 import { ApiError } from "../../lib/api-error.js";
 import type { AttachmentStorage } from "../projects/storage.js";
 import { projectRouter } from "../projects/router.js";
+import { workspaceInboxRouter } from "./inbox.js";
 import { createWorkspaceService } from "./service.js";
 
 type Auth = NonNullable<ReturnType<typeof loadAuth>>["instance"];
@@ -43,6 +44,7 @@ export function workspaceRouter(auth: Auth, db: PrismaClient, appOrigin: string,
   });
   router.use(json({ limit: "16kb" }));
   router.use("/:workspaceId/projects", projectRouter(db, actor, storage));
+  router.use("/:workspaceId", workspaceInboxRouter(db, actor));
 
   router.get("/", async (request, response) => {
     response.json({ data: await service.list(actor(request).id) });

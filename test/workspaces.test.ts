@@ -178,6 +178,27 @@ test("workspace and project isolation, role permissions, and single-use invitati
   assert(scheduled.includes(firstTaskId) && scheduled.includes(secondId) && !scheduled.includes(thirdId));
   assert.equal((await request(tasks + "?from=2026-12-09", owner.cookie)).status, 400);
   assert.equal((await request(tasks + "?from=2026-12-09&to=2027-12-09", owner.cookie)).status, 400);
+  assert.equal((await request(task + "/comments", outsider.cookie)).status, 404);
+  assert.equal((await request(task + "/comments", viewer.cookie, "POST", { body: "Wrong tenant", mentions: [outsider.id] })).status, 400);
+  const comment = await request(task + "/comments", viewer.cookie, "POST", { body: "Ready for review", mentions: [admin.id, admin.id] });
+  assert.equal(comment.status, 201);
+  const commentId = (await comment.json()).data.id;
+  const discussion = await (await request(task + "/comments", owner.cookie)).json();
+  assert.equal(discussion.data.items[0].id, commentId);
+  assert.equal(discussion.data.items.length, 1);
+  const taskHistory = await (await request(task + "/activity", owner.cookie)).json();
+  assert(taskHistory.data.items.some((item: { type: string }) => item.type === "CREATED"));
+  assert(taskHistory.data.items.some((item: { type: string }) => item.type === "COMMENTED"));
+  const inbox = await (await request(workspace + "/notifications", admin.cookie)).json();
+  assert.equal(inbox.data.unread, 1);
+  assert.equal(inbox.data.items.length, 1);
+  const readPath = workspace + "/notifications/" + inbox.data.items[0].id + "/read";
+  assert.equal((await request(readPath, owner.cookie, "PATCH")).status, 404);
+  assert.equal((await request(readPath, admin.cookie, "PATCH")).status, 204);
+  assert.equal((await request(readPath, admin.cookie, "PATCH")).status, 204);
+  assert.equal((await (await request(workspace + "/notifications", admin.cookie)).json()).data.unread, 0);
+  assert.equal((await request(workspace + "/activity-feed", outsider.cookie)).status, 404);
+  assert((await (await request(workspace + "/activity-feed", owner.cookie)).json()).data.items.length > 0);
   const attachmentBase = task + "/attachments";
   function upload(contents: string, cookie: string, mediaType = "application/pdf") {
     return fetch(`${origin}/api/workspaces${attachmentBase}`, {
@@ -206,6 +227,7 @@ test("workspace and project isolation, role permissions, and single-use invitati
   assert.equal((await request(workspace + "/members/" + viewer.id, admin.cookie, "PATCH", { role: "VIEWER" })).status, 200);
   assert.equal((await (await request(task, owner.cookie)).json()).data.participants.length, 0);
   assert.equal((await request(task + "/move", viewer.cookie, "POST", { status: "TODO", beforeId: null })).status, 403);
+  assert.equal((await request(task + "/comments", viewer.cookie, "POST", { body: "Viewer write" })).status, 403);
   assert.equal((await request(task, viewer.cookie, "DELETE")).status, 403);
   assert.equal((await request(task, owner.cookie, "DELETE")).status, 204);
   assert(await db.attachmentCleanup.findUnique({ where: { storageId: savedAttachment.storageId } }));

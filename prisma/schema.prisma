@@ -8,9 +8,9 @@ datasource db {
 }
 
 model User {
-  id                   String                @id
+  id                   String                  @id
   name                 String
-  email                String                @unique
+  email                String                  @unique
   emailVerified        Boolean
   image                String?
   createdAt            DateTime
@@ -19,6 +19,9 @@ model User {
   accounts             Account[]
   workspaceMemberships WorkspaceMembership[]
   workspaceInvitations WorkspaceInvitation[]
+  taskComments         TaskComment[]
+  taskActivity         TaskActivity[]
+  sentNotifications    WorkspaceNotification[]
 
   @@map("user")
 }
@@ -108,6 +111,7 @@ model WorkspaceMembership {
   user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   projectMemberships ProjectMember[]
+  notifications      WorkspaceNotification[]
 
   @@id([workspaceId, userId])
   @@index([userId])
@@ -194,22 +198,25 @@ model ProjectMember {
 }
 
 model Task {
-  id            String            @id @default(uuid()) @db.Uuid
-  projectId     String            @db.Uuid
-  title         String            @db.VarChar(150)
-  description   String            @default("")
-  status        TaskStatus        @default(TODO)
-  boardPosition Int               @default(0)
-  priority      Priority          @default(MEDIUM)
-  startDate     DateTime?         @db.Date
-  dueDate       DateTime?         @db.Date
-  labels        String[]          @default([])
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id            String                  @id @default(uuid()) @db.Uuid
+  projectId     String                  @db.Uuid
+  title         String                  @db.VarChar(150)
+  description   String                  @default("")
+  status        TaskStatus              @default(TODO)
+  boardPosition Int                     @default(0)
+  priority      Priority                @default(MEDIUM)
+  startDate     DateTime?               @db.Date
+  dueDate       DateTime?               @db.Date
+  labels        String[]                @default([])
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  project       Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
   participants  TaskParticipant[]
   subtasks      Subtask[]
   attachments   Attachment[]
+  comments      TaskComment[]
+  activity      TaskActivity[]
+  notifications WorkspaceNotification[]
 
   @@unique([id, projectId])
   @@index([projectId, status, createdAt])
@@ -265,4 +272,58 @@ model AttachmentCleanup {
 
   @@index([retryAt])
   @@map("attachment_cleanup")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @db.Uuid
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, createdAt, id])
+  @@index([authorId])
+  @@map("task_comment")
+}
+
+enum TaskActivityType {
+  CREATED
+  UPDATED
+  MOVED
+  COMMENTED
+}
+
+model TaskActivity {
+  id        String           @id @default(uuid()) @db.Uuid
+  taskId    String           @db.Uuid
+  actorId   String
+  type      TaskActivityType
+  detail    String?
+  createdAt DateTime         @default(now())
+  task      Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor     User             @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, createdAt, id])
+  @@index([actorId])
+  @@map("task_activity")
+}
+
+model WorkspaceNotification {
+  id          String              @id @default(uuid()) @db.Uuid
+  workspaceId String              @db.Uuid
+  userId      String
+  taskId      String              @db.Uuid
+  actorId     String
+  readAt      DateTime?
+  createdAt   DateTime            @default(now())
+  recipient   WorkspaceMembership @relation(fields: [workspaceId, userId], references: [workspaceId, userId], onDelete: Cascade)
+  task        Task                @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor       User                @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, userId, readAt, createdAt])
+  @@index([taskId])
+  @@index([actorId])
+  @@map("workspace_notification")
 }
