@@ -65,3 +65,21 @@ An attachment collection lives at `/:taskId/attachments`. GET lists completed up
 Use `GET /tasks?sort=board&status=TODO` under a project to read a Kanban column in persisted order. `POST /tasks/:taskId/move` accepts `{ "status": "IN_PROGRESS", "beforeId": null }`. Supply the ID of a task in the destination column to insert before it, or null to append. A stale destination returns HTTP 409. Moves are serialized with other writes to the same workspace.
 
 Use `GET /tasks?from=2026-12-01&to=2026-12-31&sort=due` under a project for tasks whose dates overlap an inclusive calendar range. Both dates are required when filtering. The endpoints use the same workspace permissions and pagination as the task list.
+
+## Deploy the backend to Railway
+
+Connect the backend GitHub repository to an Express service. Railway detects the root Dockerfile. Use the image's default start command. Set the service pre-deploy command to `npm run db:migrate:deploy` and the healthcheck path to `/api/ready`. Railway injects `PORT`; let the app use that port. Pre-deploy migrations run before Railway exposes the new revision.
+
+Set these variables in the backend service environment:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Rotated pooled Neon URL for application queries |
+| `DIRECT_URL` | Rotated direct Neon URL for migrations, on the same branch and database |
+| `APP_ORIGIN` | Exact public HTTPS origin of the Vercel frontend |
+| `BETTER_AUTH_SECRET` | New random server secret of at least 32 characters |
+| `RESEND_API_KEY` and `AUTH_EMAIL_FROM` | Resend credentials and verified sender for production email authentication |
+
+Set the optional Google, Better Auth Infra, and Cloudinary variables in the backend service when enabling those integrations. Generate a public HTTPS domain for the Railway service. After the service returns 200 from both `/api/health` and `/api/ready`, set the Vercel frontend's production `BACKEND_ORIGIN` to that Railway origin and redeploy the frontend. Then repeat both checks through the frontend domain.
+
+The runtime image includes Prisma CLI and the committed migrations for the pre-deploy step. Docker's build context includes only the sources and manifests needed to build the app. Credentials belong in Railway service variables.
